@@ -35,10 +35,10 @@ export default function TimeSeriesChart({
     return chartData.filter((p) => p.is_anomaly).length;
   }, [chartData]);
 
-  // Custom dot for anomalies
+  // Custom dot for anomalies with defensive NaN / coordinate checks
   const renderCustomDot = (props) => {
     const { cx, cy, payload } = props;
-    if (!payload || !payload.is_anomaly) return null;
+    if (!payload || !payload.is_anomaly || cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
 
     let fillColor = "#f43f5e"; // HIGH - rose neon
     if (payload.severity === "MEDIUM") fillColor = "#f59e0b"; // amber neon
@@ -54,9 +54,18 @@ export default function TimeSeriesChart({
         stroke="#ffffff"
         strokeWidth={1.5}
         className="cursor-pointer hover:r-7 transition-all animate-pulse shadow-lg"
-        onClick={() => onSelectAnomaly(payload.id)}
+        onClick={() => onSelectAnomaly && onSelectAnomaly(payload.id)}
       />
     );
+  };
+
+  const formatTimestamp = (t) => {
+    if (!t) return "";
+    const parts = t.split(" ");
+    if (parts.length >= 2) {
+      return `${parts[0].slice(5)} ${parts[1].slice(0, 5)}`;
+    }
+    return t.slice(5);
   };
 
   // Custom tooltip
@@ -258,146 +267,169 @@ export default function TimeSeriesChart({
       </div>
 
       {/* Chart Canvas */}
-      <div className="h-84 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-            <defs>
-              <linearGradient id="energyGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={isDark ? "#06b6d4" : "#0284c7"} stopOpacity={0.35} />
-                <stop offset="95%" stopColor={isDark ? "#06b6d4" : "#0284c7"} stopOpacity={0.0} />
-              </linearGradient>
-              <linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.03} />
-              </linearGradient>
-            </defs>
+      {chartData.length === 0 ? (
+        <div className="w-full h-[420px] flex flex-col items-center justify-center gap-3 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-8 text-center bg-slate-50/50 dark:bg-slate-900/30">
+          <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center text-cyan-500">
+            <LineChartIcon className="w-6 h-6 animate-pulse" />
+          </div>
+          <p className="text-sm font-bold text-slate-800 dark:text-slate-200 font-heading">
+            No Telemetry Points Available for {selectedEquipment || "Selected Chiller"}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md">
+            Please select an active equipment unit from the fleet dropdown above or upload telemetry data to begin time-series exploration.
+          </p>
+        </div>
+      ) : (
+        <div
+          className="w-full h-[440px] min-h-[440px] relative"
+          style={{ width: "100%", height: "440px", minHeight: "440px" }}
+        >
+          <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={400}>
+            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <defs>
+                <linearGradient id="energyGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={isDark ? "#06b6d4" : "#0284c7"} stopOpacity={0.35} />
+                  <stop offset="95%" stopColor={isDark ? "#06b6d4" : "#0284c7"} stopOpacity={0.0} />
+                </linearGradient>
+                <linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.03} />
+                </linearGradient>
+              </defs>
 
-            <XAxis
-              dataKey="timestamp"
-              tickFormatter={(t) => (t ? t.split(" ")[0].slice(5) : "")}
-              stroke={axisColor}
-              tick={{ fill: tickColor, fontSize: 10, fontFamily: "JetBrains Mono" }}
-              minTickGap={40}
-            />
-            <YAxis stroke={axisColor} tick={{ fill: tickColor, fontSize: 10, fontFamily: "JetBrains Mono" }} />
-            <Tooltip content={<CustomTooltip />} />
+              <XAxis
+                dataKey="timestamp"
+                tickFormatter={formatTimestamp}
+                stroke={axisColor}
+                tick={{ fill: tickColor, fontSize: 10, fontFamily: "JetBrains Mono" }}
+                minTickGap={40}
+              />
+              <YAxis
+                domain={["auto", "auto"]}
+                stroke={axisColor}
+                tick={{ fill: tickColor, fontSize: 10, fontFamily: "JetBrains Mono" }}
+              />
+              <Tooltip content={<CustomTooltip />} />
 
-            {/* Active Metric: Energy */}
-            {activeMetric === "energy" && (
-              <>
-                {showExpectedBand && (
-                  <>
-                    <Area
-                      type="monotone"
-                      dataKey="expected_energy_upper"
-                      stroke="none"
-                      fill="url(#bandGrad)"
-                      name="Expected Range Upper"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="expected_energy"
-                      stroke="#3b82f6"
-                      strokeDasharray="4 4"
-                      strokeWidth={1.5}
-                      dot={false}
-                      name="Expected Baseline"
-                    />
-                  </>
-                )}
+              {/* Active Metric: Energy */}
+              {activeMetric === "energy" && (
+                <>
+                  {showExpectedBand && (
+                    <>
+                      <Area
+                        type="monotone"
+                        dataKey="expected_energy_upper"
+                        stroke="none"
+                        fill="url(#bandGrad)"
+                        name="Expected Range Upper"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="expected_energy"
+                        stroke="#3b82f6"
+                        strokeDasharray="4 4"
+                        strokeWidth={1.5}
+                        dot={false}
+                        name="Expected Baseline"
+                      />
+                    </>
+                  )}
+                  <Area
+                    type="monotone"
+                    dataKey="energy"
+                    stroke={isDark ? "#06b6d4" : "#0284c7"}
+                    strokeWidth={2.5}
+                    fill="url(#energyGrad)"
+                    name="Actual Energy"
+                    dot={renderCustomDot}
+                  />
+                </>
+              )}
+
+              {/* Active Metric: Flow */}
+              {activeMetric === "flow" && (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="expected_chw_rate"
+                    stroke="#3b82f6"
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5}
+                    dot={false}
+                    name="Expected CHW Flow"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="chw_rate"
+                    stroke="#10b981"
+                    strokeWidth={2.5}
+                    name="Actual CHW Flow (L/s)"
+                    dot={renderCustomDot}
+                  />
+                </>
+              )}
+
+              {/* Active Metric: Building Load */}
+              {activeMetric === "load" && (
                 <Area
                   type="monotone"
-                  dataKey="energy"
+                  dataKey="building_load"
+                  stroke="#8b5cf6"
+                  strokeWidth={2.5}
+                  fill="#8b5cf6"
+                  fillOpacity={0.2}
+                  name="Building Load (RT)"
+                  dot={renderCustomDot}
+                />
+              )}
+
+              {/* Active Metric: Temperatures */}
+              {activeMetric === "temps" && (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="outside_temp"
+                    stroke="#f97316"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Outside Temp (°F)"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="cooling_water_temp"
+                    stroke="#06b6d4"
+                    strokeWidth={2}
+                    dot={false}
+                    name="Cooling Water Temp (°C)"
+                  />
+                </>
+              )}
+
+              {/* Active Metric: Humidity */}
+              {activeMetric === "humidity" && (
+                <Line
+                  type="monotone"
+                  dataKey="humidity"
+                  stroke="#0ea5e9"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Humidity (%)"
+                />
+              )}
+
+              {chartData.length > 5 && (
+                <Brush
+                  dataKey="timestamp"
+                  height={26}
                   stroke={isDark ? "#06b6d4" : "#0284c7"}
-                  strokeWidth={2.5}
-                  fill="url(#energyGrad)"
-                  name="Actual Energy"
-                  dot={renderCustomDot}
+                  fill={isDark ? "#0b0f19" : "#f8fafc"}
+                  tickFormatter={formatTimestamp}
                 />
-              </>
-            )}
-
-            {/* Active Metric: Flow */}
-            {activeMetric === "flow" && (
-              <>
-                <Line
-                  type="monotone"
-                  dataKey="expected_chw_rate"
-                  stroke="#3b82f6"
-                  strokeDasharray="4 4"
-                  strokeWidth={1.5}
-                  dot={false}
-                  name="Expected CHW Flow"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="chw_rate"
-                  stroke="#10b981"
-                  strokeWidth={2.5}
-                  name="Actual CHW Flow (L/s)"
-                  dot={renderCustomDot}
-                />
-              </>
-            )}
-
-            {/* Active Metric: Building Load */}
-            {activeMetric === "load" && (
-              <Area
-                type="monotone"
-                dataKey="building_load"
-                stroke="#8b5cf6"
-                strokeWidth={2.5}
-                fill="#8b5cf6"
-                fillOpacity={0.2}
-                name="Building Load (RT)"
-                dot={renderCustomDot}
-              />
-            )}
-
-            {/* Active Metric: Temperatures */}
-            {activeMetric === "temps" && (
-              <>
-                <Line
-                  type="monotone"
-                  dataKey="outside_temp"
-                  stroke="#f97316"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Outside Temp (°F)"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="cooling_water_temp"
-                  stroke="#06b6d4"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Cooling Water Temp (°C)"
-                />
-              </>
-            )}
-
-            {/* Active Metric: Humidity */}
-            {activeMetric === "humidity" && (
-              <Line
-                type="monotone"
-                dataKey="humidity"
-                stroke="#0ea5e9"
-                strokeWidth={2}
-                dot={false}
-                name="Humidity (%)"
-              />
-            )}
-
-            <Brush
-              dataKey="timestamp"
-              height={26}
-              stroke={isDark ? "#06b6d4" : "#0284c7"}
-              fill={isDark ? "#0b0f19" : "#f8fafc"}
-              tickFormatter={(t) => (t ? t.split(" ")[0].slice(5) : "")}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }

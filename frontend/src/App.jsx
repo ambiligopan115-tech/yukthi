@@ -117,6 +117,28 @@ export default function App() {
     };
   }, [selectedEquipment]);
 
+  // Ensure timeseries data is loaded when switching to timeseries tab
+  useEffect(() => {
+    if (activeTab === "timeseries" && selectedEquipment && (!timeseries || timeseries.length === 0) && !loadingTimeseries) {
+      let isMounted = true;
+      async function reloadSeries() {
+        try {
+          setLoadingTimeseries(true);
+          const data = await fetchTimeseries(selectedEquipment, null, null, 1000);
+          if (isMounted) setTimeseries(data);
+        } catch (err) {
+          console.error("Failed to load timeseries on tab switch:", err);
+        } finally {
+          if (isMounted) setLoadingTimeseries(false);
+        }
+      }
+      reloadSeries();
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [activeTab, selectedEquipment, timeseries, loadingTimeseries]);
+
   // Handle anomaly filter changes
   const handleFilterEquipment = async (eqId) => {
     try {
